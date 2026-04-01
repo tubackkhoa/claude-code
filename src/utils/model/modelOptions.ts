@@ -5,7 +5,7 @@ import {
   isMaxSubscriber,
   isTeamPremiumSubscriber
 } from '../auth.js';
-import { getModelStrings } from './modelStrings.js';
+import { getGroqModelStrings, getModelStrings } from './modelStrings.js';
 import {
   COST_TIER_3_15,
   COST_HAIKU_35,
@@ -64,9 +64,18 @@ export function getDefaultOptionForUser(fastMode = false): ModelOption {
       description: getClaudeAiUserDefaultModelDescription(fastMode)
     };
   }
+  const provider = getAPIProvider();
+
+  if (provider === 'groq') {
+    return {
+      value: null,
+      label: 'Default (recommended)',
+      description: `Use the default Groq model (currently ${getGroqModelStrings().gpt_oss_120b})`
+    };
+  }
 
   // PAYG
-  const is3P = getAPIProvider() !== 'firstParty';
+  const is3P = provider !== 'firstParty';
   return {
     value: null,
     label: 'Default (recommended)',
@@ -280,6 +289,26 @@ function getOpusPlanOption(): ModelOption {
   };
 }
 
+function getGroqOptions(): ModelOption[] {
+  return [
+    {
+      value: getGroqModelStrings().llama3_70b,
+      label: 'Llama 3.1 70B',
+      description: 'Best Groq model for complex tasks'
+    },
+    {
+      value: getGroqModelStrings().llama3_8b,
+      label: 'Llama 3.1 8B',
+      description: 'Fast and lightweight'
+    },
+    {
+      value: getGroqModelStrings().gpt_oss_120b,
+      label: 'GPT OSS 120B',
+      description: 'Balanced performance and speed'
+    }
+  ];
+}
+
 // @[MODEL LAUNCH]: Update the model picker lists below to include/reorder options for the new model.
 // Each user tier (ant, Max/Team Premium, Pro/Team Standard/Enterprise, PAYG 1P, PAYG 3P) has its own list.
 function getModelOptionsBase(fastMode = false): ModelOption[] {
@@ -295,6 +324,7 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
 
     return [
       getDefaultOptionForUser(),
+      ...getGroqOptions(),
       ...(ollama ? [ollama] : []),
       ...antModelOptions,
       getMergedOpus1MOption(fastMode),
@@ -340,8 +370,10 @@ function getModelOptionsBase(fastMode = false): ModelOption[] {
     return standardOptions;
   }
 
+  const provider = getAPIProvider();
+
   // PAYG 1P API: Default (Sonnet) + Sonnet 1M + Opus 4.6 + Opus 1M + Haiku
-  if (getAPIProvider() === 'firstParty') {
+  if (provider === 'firstParty') {
     const payg1POptions = [getDefaultOptionForUser(fastMode)];
     if (checkSonnet1mAccess()) {
       payg1POptions.push(getSonnet46_1MOption());
@@ -506,6 +538,16 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     options.push(ollama);
   }
 
+  const groqOptions = getGroqOptions();
+
+  for (const opt of groqOptions) {
+    if (!options.some((existing) => existing.value === opt.value)) {
+      options.push(opt);
+    }
+  }
+
+  const provider = getAPIProvider();
+
   // Add custom model from either the current model value or the initial one
   // if it is not already in the options.
   let customModel: ModelSetting = null;
@@ -516,6 +558,7 @@ export function getModelOptions(fastMode = false): ModelOption[] {
   } else if (initialMainLoopModel !== null) {
     customModel = initialMainLoopModel;
   }
+
   if (
     customModel === null ||
     options.some((opt) => opt.value === customModel)
@@ -523,12 +566,12 @@ export function getModelOptions(fastMode = false): ModelOption[] {
     return filterModelOptionsByAllowlist(options);
   } else if (customModel === 'opusplan') {
     return filterModelOptionsByAllowlist([...options, getOpusPlanOption()]);
-  } else if (customModel === 'opus' && getAPIProvider() === 'firstParty') {
+  } else if (customModel === 'opus' && provider === 'firstParty') {
     return filterModelOptionsByAllowlist([
       ...options,
       getMaxOpusOption(fastMode)
     ]);
-  } else if (customModel === 'opus[1m]' && getAPIProvider() === 'firstParty') {
+  } else if (customModel === 'opus[1m]' && provider === 'firstParty') {
     return filterModelOptionsByAllowlist([
       ...options,
       getMergedOpus1MOption(fastMode)
